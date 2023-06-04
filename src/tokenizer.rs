@@ -4,30 +4,25 @@ use constants::*;
 use std::iter::Peekable;
 pub use tokens::*;
 
+use crate::{JsonPathError, JsonPathResult};
+
 pub struct Tokenizer {}
 
-#[derive(Debug)]
-pub enum TokenizerError {
-    Unknown,
-    InvalidJsonPath(&'static str),
-}
-
-impl From<&'static str> for TokenizerError {
-    fn from(value: &'static str) -> Self {
-        TokenizerError::InvalidJsonPath(value)
-    }
-}
-
-type TokenizerResult<T> = Result<T, TokenizerError>;
-
 impl Tokenizer {
-    pub fn tokenize(&self, jsonpath: &str) -> TokenizerResult<Vec<Token>> {
+    pub fn new() -> Tokenizer {
+        Tokenizer {}
+    }
+
+    pub fn tokenize(&self, jsonpath: &str) -> JsonPathResult<Vec<Token>> {
         let stream = jsonpath.chars().peekable();
         let mut stream = stream.skip_while(|c| c.is_whitespace()).peekable();
 
-        let root_path_char = stream.next_if(|c| self.is_root_path_char(c)).ok_or(
-            TokenizerError::InvalidJsonPath("The jsonpath must start with '$' or '@'"),
-        )?;
+        let root_path_char =
+            stream
+                .next_if(|c| self.is_root_path_char(c))
+                .ok_or(JsonPathError::InvalidJsonPath(
+                    "The jsonpath must start with '$' or '@'".to_string(),
+                ))?;
 
         let root_path_token = RootPathToken { root_path_char };
 
@@ -35,8 +30,8 @@ impl Tokenizer {
             None => return Ok(vec![Token::Root(root_path_token)]),
             Some(n) if *n != PERIOD && *n != OPEN_SQUARE_BRACKET => {
                 // TODO: add position info into the error
-                return Err(TokenizerError::InvalidJsonPath(
-                    "Illegal character, expected '.' or '['",
+                return Err(JsonPathError::InvalidJsonPath(
+                    "Illegal character, expected '.' or '['".to_string(),
                 ));
             }
             _ => {}
@@ -52,7 +47,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         match *stream.peek().unwrap() {
             OPEN_SQUARE_BRACKET => {
                 let r = self.read_bracket_property_token(stream, tokens)?
@@ -61,21 +56,35 @@ impl Tokenizer {
                     || self.read_filter_token(stream, tokens)?
                     || self.read_placeholder_token(stream, tokens)?;
                 if !r {
-                    return Err("Invalid jsonpath.")?;
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Invalid jsonpath.".to_string(),
+                    ));
                 }
                 Ok(true)
             }
             PERIOD => match self.read_dot_token(stream, tokens)? {
                 true => Ok(true),
-                false => return Err("Invalid jsonpath.")?,
+                false => {
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Invalid jsonpath.".to_string(),
+                    ))
+                }
             },
             WILDCARD => match self.read_wildcard_token(stream, tokens)? {
                 true => Ok(true),
-                false => return Err("Invalid jsonpath.")?,
+                false => {
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Invalid jsonpath.".to_string(),
+                    ))
+                }
             },
             _ => match self.read_property_or_function_token(stream, tokens)? {
                 true => Ok(true),
-                false => return Err("Invalid jsonpath.")?,
+                false => {
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Invalid jsonpath.".to_string(),
+                    ))
+                }
             },
         }
     }
@@ -84,7 +93,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         match *stream.peek().unwrap() {
             OPEN_SQUARE_BRACKET | WILDCARD | PERIOD | SPACE => return Ok(false),
             _ => {}
@@ -94,9 +103,10 @@ impl Tokenizer {
         let mut s: String = String::new();
         while let Some(c) = stream.peek() {
             match *c {
-                SPACE => return Err(
-                    "Use bracket notion ['my prop'] if your property contains blank characters.",
-                )?,
+                SPACE => return Err(JsonPathError::InvalidJsonPath(
+                    "Use bracket notion ['my prop'] if your property contains blank characters."
+                        .to_string(),
+                )),
                 PERIOD | OPEN_SQUARE_BRACKET => break,
                 OPEN_PARENTHESIS => {
                     is_function = true;
@@ -124,7 +134,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
@@ -132,7 +142,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
@@ -140,7 +150,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
@@ -148,7 +158,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
@@ -156,7 +166,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
@@ -164,7 +174,7 @@ impl Tokenizer {
         &self,
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
-    ) -> TokenizerResult<bool> {
+    ) -> JsonPathResult<bool> {
         stream.next();
         match stream.peek() {
             Some(c) if *c == PERIOD => {
@@ -173,15 +183,15 @@ impl Tokenizer {
                 tokens.push(Token::Scan(ScanPathToken {}));
                 if let Some(PERIOD) = stream.peek().map(|c| *c) {
                     // TODO: add position info
-                    return Err(TokenizerError::InvalidJsonPath(
-                        "Unexpected '.' in the jsonpath.",
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Unexpected '.' in the jsonpath.".to_string(),
                     ));
                 }
                 self.read_next_token(stream, tokens)
             }
             None => {
-                return Err(TokenizerError::InvalidJsonPath(
-                    "the jsonpath must not end with a '.'",
+                return Err(JsonPathError::InvalidJsonPath(
+                    "the jsonpath must not end with a '.'".to_string(),
                 ))
             }
             _ => self.read_next_token(stream, tokens),
@@ -200,7 +210,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn tokenizer_supports_properties() -> TokenizerResult<()> {
+    fn tokenizer_supports_properties() -> JsonPathResult<()> {
         let tz = Tokenizer {};
         let tokens = tz.tokenize("$.data.id")?;
 

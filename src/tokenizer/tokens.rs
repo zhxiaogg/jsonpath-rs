@@ -27,7 +27,7 @@ pub struct RootPathToken {
 }
 #[derive(Debug, PartialEq)]
 pub struct PropertyPathToken {
-    properties: Vec<String>,
+    pub properties: Vec<String>,
 }
 #[derive(Debug, PartialEq)]
 pub struct ArrayIndexPathToken {}
