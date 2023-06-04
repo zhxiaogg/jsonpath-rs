@@ -6,6 +6,7 @@ pub use tokens::*;
 
 pub struct Tokenizer {}
 
+#[derive(Debug)]
 pub enum TokenizerError {
     Unknown,
     InvalidJsonPath(&'static str),
@@ -84,7 +85,39 @@ impl Tokenizer {
         stream: &mut Peekable<impl Iterator<Item = char>>,
         tokens: &mut Vec<Token>,
     ) -> TokenizerResult<bool> {
-        todo!("implement this")
+        match *stream.peek().unwrap() {
+            OPEN_SQUARE_BRACKET | WILDCARD | PERIOD | SPACE => return Ok(false),
+            _ => {}
+        };
+
+        let mut is_function = false;
+        let mut s: String = String::new();
+        while let Some(c) = stream.peek() {
+            match *c {
+                SPACE => return Err(
+                    "Use bracket notion ['my prop'] if your property contains blank characters.",
+                )?,
+                PERIOD | OPEN_SQUARE_BRACKET => break,
+                OPEN_PARENTHESIS => {
+                    is_function = true;
+                    break;
+                }
+                _ => {
+                    s.push(*c);
+                    stream.next();
+                }
+            }
+        }
+        if is_function {
+            unimplemented!("function is not supported")
+        } else {
+            tokens.push(Token::property(s))
+        }
+
+        match stream.peek().is_some() {
+            true => self.read_next_token(stream, tokens),
+            false => Ok(true),
+        }
     }
 
     fn read_bracket_property_token(
@@ -157,5 +190,26 @@ impl Tokenizer {
 
     fn is_root_path_char(&self, c: &char) -> bool {
         *c == DOC_CONTEXT || *c == EVAL_CONTEXT
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::tokenizer::Token;
+
+    use super::*;
+
+    #[test]
+    fn tokenizer_supports_properties() -> TokenizerResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$.data.id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::property("data".to_string()),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
     }
 }

@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub enum Token {
     Root(RootPathToken),
     Property(PropertyPathToken),
@@ -10,14 +11,38 @@ pub enum Token {
     Wildcard(WildcardPathToken),
 }
 
+impl Token {
+    pub fn root(root_path_char: char) -> Token {
+        Token::Root(RootPathToken { root_path_char })
+    }
+    pub fn property(name: String) -> Token {
+        Token::Property(PropertyPathToken {
+            properties: vec![name],
+        })
+    }
+}
+#[derive(Debug, PartialEq)]
 pub struct RootPathToken {
     pub root_path_char: char,
 }
-pub struct PropertyPathToken {}
+#[derive(Debug, PartialEq)]
+pub struct PropertyPathToken {
+    properties: Vec<String>,
+}
+#[derive(Debug, PartialEq)]
 pub struct ArrayIndexPathToken {}
+
+#[derive(Debug, PartialEq)]
 pub struct ArrayPathPathToken {}
+
+#[derive(Debug, PartialEq)]
 pub struct ArraySlicePathToken {}
+
+#[derive(Debug, PartialEq)]
 pub struct PredicatePathToken {}
+#[derive(Debug, PartialEq)]
 pub struct FunctionPathToken {}
+#[derive(Debug, PartialEq)]
 pub struct ScanPathToken {}
+#[derive(Debug, PartialEq)]
 pub struct WildcardPathToken {}
