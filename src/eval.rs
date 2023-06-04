@@ -184,12 +184,35 @@ mod test {
     }
 
     #[test]
-    fn can_query_properties() -> JsonPathResult<()> {
+    fn can_query_single_property() -> JsonPathResult<()> {
         let tz = Tokenizer::new();
         let tokens = tz.tokenize("$.data.msg")?;
         let mut eval = Eval::new();
         let r = eval.eval(&json!({"data": {"msg": "hello"}}), tokens)?;
         assert_eq!(json!("hello"), r);
+        Ok(())
+    }
+
+    #[test]
+    fn can_query_single_bracket_property() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$[\"data\"].msg")?;
+        let mut eval = Eval::new();
+        let r = eval.eval(
+            &json!({"data": {"msg": "hello"}, "value": {"msg": "jsonpath"}}),
+            tokens,
+        )?;
+        assert_eq!(json!("hello"), r);
+        Ok(())
+    }
+
+    #[test]
+    fn can_query_multiple_bracket_properties() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$['data', 'value'].msg")?;
+        let mut eval = Eval::new();
+        let r = eval.eval(&json!({"data": {"msg": "hello"}}), tokens)?;
+        assert_eq!(json!(["hello", "jsonpath"]), r);
         Ok(())
     }
 

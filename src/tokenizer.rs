@@ -130,12 +130,82 @@ impl Tokenizer {
         }
     }
 
+    /// read ['a','b'] etc. properties within square brackets
     fn read_bracket_property_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char>>,
-        _tokens: &mut Vec<Token>,
+        stream: &mut Peekable<impl Iterator<Item = char>>,
+        tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        todo!("implement this")
+        // TODO: don't do this until starts actual processing
+        stream.next();
+        // TODO: trim start whitespaces
+        let mut potential_delimiter = SINGLE_QUOTE;
+        match stream.peek() {
+            None => return Ok(false),
+            Some(c) if *c == SINGLE_QUOTE || *c == DOUBLE_QUOTE => {
+                potential_delimiter = *c;
+            }
+            _ => return Ok(false),
+        }
+
+        let mut props: Vec<String> = vec![];
+        let mut in_property = false;
+        let mut in_escape = false;
+        let mut last_significant_was_command = false;
+        let mut current_prop = String::new();
+        while let Some(c) = stream.next() {
+            match c {
+                _ if in_escape => in_escape = false,
+                ESCAPE => in_escape = true,
+                CLOSE_SQUARE_BRACKET if !in_property && !last_significant_was_command => {
+                    break;
+                }
+                CLOSE_SQUARE_BRACKET if !in_property && last_significant_was_command => {
+                    return Err(JsonPathError::InvalidJsonPath(
+                        "Found empty property.".to_string(),
+                    ));
+                }
+                c if c == potential_delimiter && in_property => {
+                    // TODO: get rid of clone
+                    props.push(current_prop.clone());
+                    in_property = false;
+                    match stream.peek() {
+                        Some(c) if *c != CLOSE_SQUARE_BRACKET && *c != COMMA => {
+                            return Err(JsonPathError::InvalidJsonPath(
+                                "Property must be separated by comma or Property must be terminated close square bracket.".to_string(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                c if c == potential_delimiter && !in_property => {
+                    current_prop = String::new();
+                    last_significant_was_command = false;
+                    in_property = true;
+                }
+                COMMA if !in_property => {
+                    if last_significant_was_command {
+                        return Err(JsonPathError::InvalidJsonPath(
+                            "Found empty property".to_string(),
+                        ));
+                    }
+                    last_significant_was_command = true
+                }
+                _ => current_prop.push(c),
+            }
+        }
+
+        if in_property {
+            return Err(JsonPathError::InvalidJsonPath(
+                "Incomplete property".to_string(),
+            ));
+        }
+
+        tokens.push(Token::properties(props));
+        match stream.peek() {
+            None => Ok(true),
+            Some(_) => self.read_next_token(stream, tokens),
+        }
     }
 
     fn read_array_token(
@@ -231,6 +301,36 @@ mod test {
         let expected = vec![
             Token::root('$'),
             Token::property("data".to_string()),
+            Token::scan(),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_supports_square_bracket_properties() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$['data', 'value']..id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::properties(vec!["data".to_string(), "value".to_string()]),
+            Token::scan(),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_supports_square_bracket_properties_with_white_spaces() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$[ 'data' , ' val ue ' ]..id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::properties(vec!["data".to_string(), " val ue ".to_string()]),
             Token::scan(),
             Token::property("id".to_string()),
         ];

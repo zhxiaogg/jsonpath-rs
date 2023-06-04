@@ -20,6 +20,9 @@ impl Token {
             properties: vec![name],
         })
     }
+    pub fn properties(properties: Vec<String>) -> Token {
+        Token::Property(PropertyPathToken { properties })
+    }
     pub fn scan() -> Token {
         Token::Scan(ScanPathToken {})
     }
