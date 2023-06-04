@@ -173,6 +173,17 @@ mod test {
     use super::Eval;
 
     #[test]
+    fn can_query_root_node() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$")?;
+        let mut eval = Eval::new();
+        let json = json!({"data": {"msg": "hello"}});
+        let r = eval.eval(&json, tokens)?;
+        assert_eq!(json, r);
+        Ok(())
+    }
+
+    #[test]
     fn can_query_properties() -> JsonPathResult<()> {
         let tz = Tokenizer::new();
         let tokens = tz.tokenize("$.data.msg")?;
