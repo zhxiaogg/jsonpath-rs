@@ -20,6 +20,9 @@ impl Token {
             properties: vec![name],
         })
     }
+    pub fn scan() -> Token {
+        Token::Scan(ScanPathToken {})
+    }
 }
 #[derive(Debug, PartialEq)]
 pub struct RootPathToken {

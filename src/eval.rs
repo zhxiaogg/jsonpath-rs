@@ -1,20 +1,30 @@
+mod result_acceptor;
+use result_acceptor::*;
+
 use std::iter::Peekable;
 
 use serde_json::Value;
 
 use crate::{
-    tokenizer::{PropertyPathToken, RootPathToken, Token},
+    tokenizer::{PropertyPathToken, RootPathToken, ScanPathToken, Token},
     JsonPathError, JsonPathResult,
 };
 
-pub struct Eval<I: Iterator<Item = Token>> {
-    tokens: Peekable<I>,
+pub struct Eval {
+    result_acceptor: Box<dyn ResultAcceptor>,
 }
 
-impl<I: Iterator<Item = Token>> Eval<I> {
-    pub fn eval(&mut self, json: &Value) -> JsonPathResult<Value> {
-        match self.tokens.peek() {
-            Some(Token::Root(..)) => {}
+impl Eval {
+    pub fn new() -> Self {
+        Eval {
+            result_acceptor: Box::new(ScalarResultAcceptor::new()),
+        }
+    }
+    pub fn eval(&mut self, json: &Value, tokens: Vec<Token>) -> JsonPathResult<Value> {
+        let mut tokens = tokens.iter().peekable();
+
+        match tokens.next() {
+            Some(Token::Root(root)) => self.visit_root(root, json, &mut tokens)?,
             None => {
                 return Err(JsonPathError::EvaluationError(
                     "Empty jsonpath provided".to_string(),
@@ -26,48 +36,131 @@ impl<I: Iterator<Item = Token>> Eval<I> {
                 ))
             }
         }
-        let mut object = json;
-        while let Some(token) = self.tokens.next() {
-            match token {
-                Token::Root(root) => self.visit_root(&root, object),
-                Token::Property(property) => object = self.visit_property(&property, object)?,
-                t => {
-                    return Err(JsonPathError::EvaluationError(format!(
-                        "Unexpected token: {:?}",
-                        t
-                    )))
-                }
-            }
-        }
 
-        Ok(object.clone())
+        self.result_acceptor.result()
     }
 
-    fn visit_root(&mut self, token: &RootPathToken, json: &Value) {}
+    fn push_result(&mut self, value: Option<Value>) -> JsonPathResult<()> {
+        self.result_acceptor.accept(value)
+    }
+
+    fn visit_next_token<'a>(
+        &mut self,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        match tokens.next() {
+            Some(Token::Root(_root)) => unimplemented!(),
+            Some(Token::Property(property)) => self.visit_property(property, json, tokens),
+            Some(Token::ArrayIndex(_)) => todo!(),
+            Some(Token::ArrayPath(_)) => todo!(),
+            Some(Token::ArraySlice(_)) => todo!(),
+            Some(Token::Predicate(_)) => todo!(),
+            Some(Token::Function(_)) => todo!(),
+            Some(Token::Scan(scan)) => self.visit_scan(scan, json, tokens),
+            Some(Token::Wildcard(_)) => todo!(),
+            None => todo!(),
+        }
+    }
+
+    fn visit_root<'a>(
+        &mut self,
+        _token: &RootPathToken,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        match tokens.peek() {
+            None => self.push_result(Some(json.clone())),
+            Some(_) => self.visit_next_token(json, tokens),
+        }
+    }
 
     fn visit_property<'a>(
         &mut self,
         token: &PropertyPathToken,
-        object: &'a Value,
-    ) -> JsonPathResult<&'a Value> {
-        match object {
-            Value::Object(object) => {
-                if token.properties.len() > 1 {
-                    unimplemented!()
-                }
-                let prop = token.properties.iter().next().unwrap();
-                match object.get(prop) {
-                    Some(v) => Ok(v),
-                    None => unimplemented!(),
-                }
-            }
-            _ => {
-                return Err(JsonPathError::EvaluationError(format!(
-                    "Expected to find an object with property {:?}",
-                    token
-                )))
-            }
+        object: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        let object = object
+            .as_object()
+            .ok_or(JsonPathError::EvaluationError(format!(
+                "Expected to find an object with property {:?}",
+                token
+            )))?;
+
+        if token.properties.len() > 1 {
+            unimplemented!()
         }
+        let prop = token.properties.iter().next().unwrap();
+        match object.get(prop) {
+            Some(v) => match tokens.peek() {
+                None => self.push_result(Some(v.clone())),
+                Some(_t) => self.visit_next_token(v, tokens),
+            },
+            None => self.push_result(None),
+        }
+    }
+}
+
+// visit ScanPathToken
+impl Eval {
+    /// upgrade the Eval to return array results
+    fn use_array_result_register(&mut self) {
+        if self.result_acceptor.is_scalar() {
+            self.result_acceptor = Box::new(ArrayResultRegister::new())
+        }
+    }
+
+    fn visit_scan<'a>(
+        &mut self,
+        _token: &ScanPathToken,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        if !json.is_array() && !json.is_object() {
+            return Err(JsonPathError::EvaluationError(
+                "Properties scan ('..') can only run on array or object values.".to_string(),
+            ));
+        }
+        self.use_array_result_register();
+        self.walk(json, tokens)
+    }
+
+    fn walk<'a>(
+        &mut self,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        match json {
+            Value::Object(_object) => self.walk_object(json, tokens),
+            Value::Array(_array) => self.walk_array(json, tokens),
+            _ => Ok(()),
+        }
+    }
+
+    fn walk_object<'a>(
+        &mut self,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        self.visit_next_token(json, &mut tokens.clone())?;
+        let object = json.as_object().unwrap();
+        for (_k, v) in object {
+            self.walk(v, &mut tokens.clone())?;
+        }
+        Ok(())
+    }
+
+    fn walk_array<'a>(
+        &mut self,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        let array = json.as_array().unwrap();
+        for v in array {
+            self.walk(v, &mut tokens.clone())?;
+        }
+        Ok(())
     }
 }
 
@@ -80,14 +173,38 @@ mod test {
     use super::Eval;
 
     #[test]
-    fn can_evaluate_property_queries() -> JsonPathResult<()> {
+    fn can_query_properties() -> JsonPathResult<()> {
         let tz = Tokenizer::new();
         let tokens = tz.tokenize("$.data.msg")?;
-        let mut eval = Eval {
-            tokens: tokens.into_iter().peekable(),
-        };
-        let r = eval.eval(&json!({"data": {"msg": "hello"}}))?;
+        let mut eval = Eval::new();
+        let r = eval.eval(&json!({"data": {"msg": "hello"}}), tokens)?;
         assert_eq!(json!("hello"), r);
+        Ok(())
+    }
+
+    #[test]
+    fn can_scan_properties() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$.data..msg")?;
+        let mut eval = Eval::new();
+        let r = eval.eval(
+            &json!({"data": {"item1": {"msg": "hello"}, "item2": {"msg": "jsonpath"}}}),
+            tokens,
+        )?;
+        assert_eq!(json!(["hello", "jsonpath"]), r);
+        Ok(())
+    }
+
+    #[test]
+    fn can_scan_properties_with_arrays() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$.data..msg")?;
+        let mut eval = Eval::new();
+        let r = eval.eval(
+            &json!({"data": {"items": [{"msg": "jsonpath"},  {"msg": "!"}], "msg": "hello"}}),
+            tokens,
+        )?;
+        assert_eq!(json!(["hello", "jsonpath", "!"]), r);
         Ok(())
     }
 }

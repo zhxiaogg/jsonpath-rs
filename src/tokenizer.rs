@@ -132,40 +132,40 @@ impl Tokenizer {
 
     fn read_bracket_property_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
-        tokens: &mut Vec<Token>,
+        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
     fn read_array_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
-        tokens: &mut Vec<Token>,
+        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
     fn read_filter_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
-        tokens: &mut Vec<Token>,
+        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
     fn read_placeholder_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
-        tokens: &mut Vec<Token>,
+        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
 
     fn read_wildcard_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
-        tokens: &mut Vec<Token>,
+        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
     }
@@ -180,7 +180,7 @@ impl Tokenizer {
             Some(c) if *c == PERIOD => {
                 stream.next();
                 // create scan token
-                tokens.push(Token::Scan(ScanPathToken {}));
+                tokens.push(Token::scan());
                 if let Some(PERIOD) = stream.peek().map(|c| *c) {
                     // TODO: add position info
                     return Err(JsonPathError::InvalidJsonPath(
@@ -210,13 +210,28 @@ mod test {
     use super::*;
 
     #[test]
-    fn tokenizer_supports_properties() -> JsonPathResult<()> {
+    fn tokenizer_supports_query_properties() -> JsonPathResult<()> {
         let tz = Tokenizer {};
         let tokens = tz.tokenize("$.data.id")?;
 
         let expected = vec![
             Token::root('$'),
             Token::property("data".to_string()),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_supports_scan_properties() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$.data..id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::property("data".to_string()),
+            Token::scan(),
             Token::property("id".to_string()),
         ];
         assert_eq!(expected, tokens);
