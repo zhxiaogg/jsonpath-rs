@@ -3,8 +3,10 @@ mod tokens;
 use constants::*;
 use std::iter::Peekable;
 pub use tokens::*;
-
+mod stream;
 use crate::{JsonPathError, JsonPathResult};
+use stream::clone_for_look_ahead;
+use stream::PeekableExt;
 
 pub struct Tokenizer {}
 
@@ -45,7 +47,7 @@ impl Tokenizer {
 
     fn read_next_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         match *stream.peek().unwrap() {
@@ -91,7 +93,7 @@ impl Tokenizer {
 
     fn read_property_or_function_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         match *stream.peek().unwrap() {
@@ -133,14 +135,15 @@ impl Tokenizer {
     /// read ['a','b'] etc. properties within square brackets
     fn read_bracket_property_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        // TODO: don't do this until starts actual processing
-        stream.next();
-        // TODO: trim start whitespaces
+        let mut working_stream = clone_for_look_ahead(stream);
+        working_stream.next();
+        working_stream.drop_while(|c| c.is_whitespace());
+
         let mut potential_delimiter = SINGLE_QUOTE;
-        match stream.peek() {
+        match working_stream.peek() {
             None => return Ok(false),
             Some(c) if *c == SINGLE_QUOTE || *c == DOUBLE_QUOTE => {
                 potential_delimiter = *c;
@@ -153,7 +156,7 @@ impl Tokenizer {
         let mut in_escape = false;
         let mut last_significant_was_command = false;
         let mut current_prop = String::new();
-        while let Some(c) = stream.next() {
+        while let Some(c) = working_stream.next() {
             match c {
                 _ if in_escape => in_escape = false,
                 ESCAPE => in_escape = true,
@@ -169,7 +172,8 @@ impl Tokenizer {
                     // TODO: get rid of clone
                     props.push(current_prop.clone());
                     in_property = false;
-                    match stream.peek() {
+                    working_stream.drop_while(|c| c.is_whitespace());
+                    match working_stream.peek() {
                         Some(c) if *c != CLOSE_SQUARE_BRACKET && *c != COMMA => {
                             return Err(JsonPathError::InvalidJsonPath(
                                 "Property must be separated by comma or Property must be terminated close square bracket.".to_string(),
@@ -202,15 +206,15 @@ impl Tokenizer {
         }
 
         tokens.push(Token::properties(props));
-        match stream.peek() {
+        match working_stream.peek() {
             None => Ok(true),
-            Some(_) => self.read_next_token(stream, tokens),
+            Some(_) => self.read_next_token(&mut working_stream, tokens),
         }
     }
 
     fn read_array_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
@@ -218,7 +222,7 @@ impl Tokenizer {
 
     fn read_filter_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
@@ -226,7 +230,7 @@ impl Tokenizer {
 
     fn read_placeholder_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
@@ -234,7 +238,7 @@ impl Tokenizer {
 
     fn read_wildcard_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char>>,
+        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         _tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         todo!("implement this")
@@ -242,7 +246,7 @@ impl Tokenizer {
 
     fn read_dot_token(
         &self,
-        stream: &mut Peekable<impl Iterator<Item = char>>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
         stream.next();
@@ -326,7 +330,7 @@ mod test {
     #[test]
     fn tokenizer_supports_square_bracket_properties_with_white_spaces() -> JsonPathResult<()> {
         let tz = Tokenizer {};
-        let tokens = tz.tokenize("$[ 'data' , ' val ue ' ]..id")?;
+        let tokens = tz.tokenize("$[ 'data' , ' val ue '  ]..id")?;
 
         let expected = vec![
             Token::root('$'),
