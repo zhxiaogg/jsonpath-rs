@@ -154,22 +154,15 @@ impl Tokenizer {
         let mut props: Vec<String> = vec![];
         let mut in_property = false;
         let mut in_escape = false;
-        let mut last_significant_was_command = false;
         let mut current_prop = String::new();
         while let Some(c) = working_stream.next() {
             match c {
                 _ if in_escape => in_escape = false,
                 ESCAPE => in_escape = true,
-                CLOSE_SQUARE_BRACKET if !in_property && !last_significant_was_command => {
+                CLOSE_SQUARE_BRACKET if !in_property => {
                     break;
                 }
-                CLOSE_SQUARE_BRACKET if !in_property && last_significant_was_command => {
-                    return Err(JsonPathError::InvalidJsonPath(
-                        "Found empty property.".to_string(),
-                    ));
-                }
                 c if c == potential_delimiter && in_property => {
-                    // TODO: get rid of clone
                     props.push(current_prop.clone());
                     in_property = false;
                     working_stream.drop_while(|c| c.is_whitespace());
@@ -184,16 +177,19 @@ impl Tokenizer {
                 }
                 c if c == potential_delimiter && !in_property => {
                     current_prop = String::new();
-                    last_significant_was_command = false;
                     in_property = true;
                 }
                 COMMA if !in_property => {
-                    if last_significant_was_command {
-                        return Err(JsonPathError::InvalidJsonPath(
-                            "Found empty property".to_string(),
-                        ));
+                    working_stream.drop_while(|c| c.is_whitespace());
+                    match working_stream.peek() {
+                        // TODO: consider support diff delimiter?
+                        Some(c) if *c == potential_delimiter => {}
+                        _ => {
+                            return Err(JsonPathError::InvalidJsonPath(
+                                "Expecte delimiter after comma".to_string(),
+                            ))
+                        }
                     }
-                    last_significant_was_command = true
                 }
                 _ => current_prop.push(c),
             }
@@ -339,6 +335,15 @@ mod test {
             Token::property("id".to_string()),
         ];
         assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_should_fail_if_no_delimiter_after_comman_when_parsing_bracket_properties(
+    ) -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let result = tz.tokenize("$[ 'data' , uexpected' val ue '  ]..id");
+        assert!(result.is_err());
         Ok(())
     }
 }
