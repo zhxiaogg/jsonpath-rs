@@ -3,7 +3,7 @@ use result_acceptor::*;
 
 use std::iter::Peekable;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
     tokenizer::{PropertyPathToken, RootPathToken, ScanPathToken, Token},
@@ -89,15 +89,45 @@ impl Eval {
             )))?;
 
         if token.properties.len() > 1 {
-            unimplemented!()
-        }
-        let prop = token.properties.iter().next().unwrap();
-        match object.get(prop) {
-            Some(v) => match tokens.peek() {
-                None => self.push_result(Some(v.clone())),
-                Some(_t) => self.visit_next_token(v, tokens),
-            },
-            None => self.push_result(None),
+            match tokens.peek() {
+                None => {
+                    // this is a leaf token, will merge properties into one object
+                    let mut result = Map::new();
+                    for prop in token.properties.iter() {
+                        match object.get(prop) {
+                            Some(v) => result.insert(prop.to_string(), v.clone()),
+                            // TODO: differentiate undefined and null with options
+                            None => result.insert(prop.to_string(), Value::Null),
+                        };
+                    }
+                    self.push_result(Some(Value::Object(result)))
+                }
+                Some(_) => {
+                    // this is a multi property iteration
+                    self.use_array_result_register();
+
+                    for prop in token.properties.iter() {
+                        match object.get(prop) {
+                            Some(v) => {
+                                self.visit_next_token(v, &mut tokens.clone())?;
+                            }
+                            // TODO: differentiate undefined and null with options
+                            None => self.push_result(None)?,
+                        };
+                    }
+                    Ok(())
+                }
+            }
+        } else {
+            // single property query
+            let prop = token.properties.iter().next().unwrap();
+            match object.get(prop) {
+                Some(v) => match tokens.peek() {
+                    None => self.push_result(Some(v.clone())),
+                    Some(_t) => self.visit_next_token(v, tokens),
+                },
+                None => self.push_result(None),
+            }
         }
     }
 }
@@ -198,10 +228,7 @@ mod test {
         let tz = Tokenizer::new();
         let tokens = tz.tokenize("$[\"data\"].msg")?;
         let mut eval = Eval::new();
-        let r = eval.eval(
-            &json!({"data": {"msg": "hello"}, "value": {"msg": "jsonpath"}}),
-            tokens,
-        )?;
+        let r = eval.eval(&json!({"data": {"msg": "hello"}}), tokens)?;
         assert_eq!(json!("hello"), r);
         Ok(())
     }
@@ -211,8 +238,24 @@ mod test {
         let tz = Tokenizer::new();
         let tokens = tz.tokenize("$['data','value'].msg")?;
         let mut eval = Eval::new();
-        let r = eval.eval(&json!({"data": {"msg": "hello"}}), tokens)?;
+        let r = eval.eval(
+            &json!({"data": {"msg": "hello"}, "value": {"msg": "jsonpath"}}),
+            tokens,
+        )?;
         assert_eq!(json!(["hello", "jsonpath"]), r);
+        Ok(())
+    }
+
+    #[test]
+    fn can_query_and_merge_multiple_bracket_properties() -> JsonPathResult<()> {
+        let tz = Tokenizer::new();
+        let tokens = tz.tokenize("$.data['msg1','msg2']")?;
+        let mut eval = Eval::new();
+        let r = eval.eval(
+            &json!({"data": {"msg1": "hello", "msg2": "jsonpath", "msg3": "xxx"}}),
+            tokens,
+        )?;
+        assert_eq!(json!({"msg1": "hello", "msg2": "jsonpath"}), r);
         Ok(())
     }
 
