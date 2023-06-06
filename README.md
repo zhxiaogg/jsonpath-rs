@@ -4,7 +4,14 @@ A Rust [JsonPath](https://goessner.net/articles/JsonPath/) implementation based 
 
 ## Usage
 
-TODO
+```rust
+use json_path::JsonPathQuery;
+use serde_json::json;
+
+let object = json!({"greetings": "hello, json_path"});
+let result = object.query("$.['greetings']").unwrap();
+assert_eq!(json!("hello, json_path"), result);
+```
 
 ## Similar Projects
 
