@@ -1,7 +1,20 @@
 [package]
-name = "jsonpath-rs"
+name = "json_path"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+keywords = ["jsonpath", "json"]
+authors = ["Xiaoguang Zhang <zhxiaog@outlook.com>"]
+description = "A rust implementation of JsonPath"
+documentation = "https://docs.rs/jsonpath-rs"
+readme = "README.md"
+repository = "https://github.com/zhxiaogg/jsonpath-rs"
+exclude = [".*"]
+
+[lib]
+name = "json_path"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
