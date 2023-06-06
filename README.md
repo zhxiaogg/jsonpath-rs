@@ -1,5 +1,9 @@
 # jsonpath-rs
 
+[![Crates.io](https://img.shields.io/crates/v/json_path)](https://crates.io/crates/json_path)
+[![docs.rs](https://img.shields.io/docsrs/json_path)](https://docs.rs/json_path/latest)
+[![Rust CI](https://github.com/zhxiaogg/jsonpath-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/zhxiaogg/jsonpath-rs/actions/workflows/rust.yml)
+
 A Rust [JsonPath](https://goessner.net/articles/JsonPath/) implementation based on the Java [json-path/JsonPath](https://github.com/json-path/JsonPath) project.
 
 ## Usage
