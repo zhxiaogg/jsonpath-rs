@@ -120,7 +120,7 @@ impl Eval {
             }
         } else {
             // single property query
-            let prop = token.properties.iter().next().unwrap();
+            let prop = token.properties.first().unwrap();
             match object.get(prop) {
                 Some(v) => match tokens.peek() {
                     None => self.push_result(Some(v.clone())),

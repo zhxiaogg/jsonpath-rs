@@ -66,27 +66,21 @@ impl Tokenizer {
             }
             PERIOD => match self.read_dot_token(stream, tokens)? {
                 true => Ok(true),
-                false => {
-                    return Err(JsonPathError::InvalidJsonPath(
-                        "Invalid jsonpath.".to_string(),
-                    ))
-                }
+                false => Err(JsonPathError::InvalidJsonPath(
+                    "Invalid jsonpath.".to_string(),
+                )),
             },
             WILDCARD => match self.read_wildcard_token(stream, tokens)? {
                 true => Ok(true),
-                false => {
-                    return Err(JsonPathError::InvalidJsonPath(
-                        "Invalid jsonpath.".to_string(),
-                    ))
-                }
+                false => Err(JsonPathError::InvalidJsonPath(
+                    "Invalid jsonpath.".to_string(),
+                )),
             },
             _ => match self.read_property_or_function_token(stream, tokens)? {
                 true => Ok(true),
-                false => {
-                    return Err(JsonPathError::InvalidJsonPath(
-                        "Invalid jsonpath.".to_string(),
-                    ))
-                }
+                false => Err(JsonPathError::InvalidJsonPath(
+                    "Invalid jsonpath.".to_string(),
+                )),
             },
         }
     }
@@ -251,7 +245,7 @@ impl Tokenizer {
                 stream.next();
                 // create scan token
                 tokens.push(Token::scan());
-                if let Some(PERIOD) = stream.peek().map(|c| *c) {
+                if let Some(PERIOD) = stream.peek().copied() {
                     // TODO: add position info
                     return Err(JsonPathError::InvalidJsonPath(
                         "Unexpected '.' in the jsonpath.".to_string(),
@@ -259,11 +253,9 @@ impl Tokenizer {
                 }
                 self.read_next_token(stream, tokens)
             }
-            None => {
-                return Err(JsonPathError::InvalidJsonPath(
-                    "the jsonpath must not end with a '.'".to_string(),
-                ))
-            }
+            None => Err(JsonPathError::InvalidJsonPath(
+                "the jsonpath must not end with a '.'".to_string(),
+            )),
             _ => self.read_next_token(stream, tokens),
         }
     }
