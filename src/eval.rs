@@ -52,9 +52,8 @@ impl Eval {
         match tokens.next() {
             Some(Token::Root(_root)) => unimplemented!(),
             Some(Token::Property(property)) => self.visit_property(property, json, tokens),
-            Some(Token::ArrayIndex(_)) => todo!(),
-            Some(Token::ArrayPath(_)) => todo!(),
-            Some(Token::ArraySlice(_)) => todo!(),
+            Some(Token::ArrayIndex { .. }) => todo!(),
+            Some(Token::ArraySlice { .. }) => todo!(),
             Some(Token::Predicate(_)) => todo!(),
             Some(Token::Function(_)) => todo!(),
             Some(Token::Scan(scan)) => self.visit_scan(scan, json, tokens),

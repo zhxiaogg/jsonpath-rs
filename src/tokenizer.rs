@@ -204,10 +204,41 @@ impl Tokenizer {
 
     fn read_array_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
-        _tokens: &mut Vec<Token>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
+        tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        todo!("implement this")
+        let mut working_stream = clone_for_look_ahead(stream);
+        working_stream.next();
+        working_stream.drop_while(|c| c.is_whitespace());
+
+        // try get array index, after the loop, next token should be ]
+        let mut expr = String::new();
+        while let Some(c) = working_stream.peek() {
+            if c.is_ascii_digit() || *c == MINUS || *c == SPLIT || c.is_whitespace() || *c == COMMA
+            {
+                expr.push(*c);
+                working_stream.next();
+            } else {
+                break;
+            }
+        }
+
+        // check expr is present, next token is ]
+        match working_stream.next() {
+            Some(CLOSE_SQUARE_BRACKET) if !expr.is_empty() => {
+                if expr.contains(SPLIT) {
+                    tokens.push(Token::array_slice(expr)?);
+                } else {
+                    tokens.push(Token::array_index(expr)?);
+                }
+                match working_stream.peek() {
+                    None => Ok(true),
+                    Some(_) => self.read_next_token(&mut working_stream, tokens),
+                }
+            }
+            Some(CLOSE_SQUARE_BRACKET) => Ok(false),
+            _ => Ok(false),
+        }
     }
 
     fn read_filter_token(
@@ -336,6 +367,44 @@ mod test {
         let tz = Tokenizer {};
         let result = tz.tokenize("$[ 'data' , uexpected' val ue '  ]..id");
         assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_supports_array_index() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$[ 101 ]..id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::array_index("101".to_string())?,
+            Token::scan(),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_supports_array_slice() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$[101 : 200 ]..id")?;
+
+        let expected = vec![
+            Token::root('$'),
+            Token::array_slice("101:200".to_string())?,
+            Token::scan(),
+            Token::property("id".to_string()),
+        ];
+        assert_eq!(expected, tokens);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_reports_error_for_invalid_array_slice() -> JsonPathResult<()> {
+        let tz = Tokenizer {};
+        let tokens = tz.tokenize("$[ 101 : 2 00 ]..id");
+        assert!(tokens.is_err());
         Ok(())
     }
 }

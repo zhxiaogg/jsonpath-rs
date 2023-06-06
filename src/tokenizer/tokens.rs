@@ -1,10 +1,13 @@
+use crate::{JsonPathError, JsonPathResult};
+
+use super::constants::SPLIT;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Root(RootPathToken),
     Property(PropertyPathToken),
-    ArrayIndex(ArrayIndexPathToken),
-    ArrayPath(ArrayPathPathToken),
-    ArraySlice(ArraySlicePathToken),
+    ArrayIndex { index: i32 },
+    ArraySlice { start: i32, end: i32 },
     Predicate(PredicatePathToken),
     Function(FunctionPathToken),
     Scan(ScanPathToken),
@@ -26,7 +29,32 @@ impl Token {
     pub fn scan() -> Token {
         Token::Scan(ScanPathToken {})
     }
+
+    pub fn array_index(expr: String) -> JsonPathResult<Token> {
+        let index = Self::as_i32(expr.as_str())?;
+        Ok(Token::ArrayIndex { index })
+    }
+
+    pub fn array_slice(expr: String) -> JsonPathResult<Token> {
+        let parts: Vec<&str> = expr.split(SPLIT).collect();
+        if !parts.len() == 2 {
+            return Err(JsonPathError::InvalidJsonPath(format!(
+                "Invalid array splice {}",
+                expr
+            )));
+        }
+        let start = Self::as_i32(parts[0])?;
+        let end = Self::as_i32(parts[1])?;
+        Ok(Token::ArraySlice { start, end })
+    }
+
+    fn as_i32(v: &str) -> JsonPathResult<i32> {
+        v.trim()
+            .parse::<i32>()
+            .map_err(|_e| JsonPathError::InvalidJsonPath("Invalid array index.".to_string()))
+    }
 }
+
 #[derive(Debug, PartialEq)]
 pub struct RootPathToken {
     pub root_path_char: char,
@@ -35,14 +63,6 @@ pub struct RootPathToken {
 pub struct PropertyPathToken {
     pub properties: Vec<String>,
 }
-#[derive(Debug, PartialEq)]
-pub struct ArrayIndexPathToken {}
-
-#[derive(Debug, PartialEq)]
-pub struct ArrayPathPathToken {}
-
-#[derive(Debug, PartialEq)]
-pub struct ArraySlicePathToken {}
 
 #[derive(Debug, PartialEq)]
 pub struct PredicatePathToken {}
