@@ -13,9 +13,31 @@ use json_path::JsonPathQuery;
 use serde_json::json;
 
 let object = json!({"greetings": "hello, json_path"});
-let result = object.query("$.['greetings']").unwrap();
-assert_eq!(json!("hello, json_path"), result);
+let result = object.query("$.['greetings']");
+assert_eq!(Ok(json!("hello, json_path")), result);
 ```
+
+## Features
+
+### Operators
+
+| Operator                  | Description                                                          |
+| :------------------------ | :------------------------------------------------------------------- |
+| `$`                       | The root element to query. This starts all path expressions.         |
+| `@`                       | WIP, The current node being processed by a filter predicate.         |
+| `*`                       | WIP, Wildcard. Available anywhere a name or numeric are required.    |
+| `..`                      | Deep scan. Available anywhere a name is required.                    |
+| `.<name>`                 | Dot-notated child                                                    |
+| `['<name>' (, '<name>')]` | Bracket-notated child or children                                    |
+| `[<number> (, <number>)]` | Array index or indexes                                               |
+| `[start:end]`             | Array slice operator                                                 |
+| `[?(<expression>)]`       | WIP, Filter expression. Expression must evaluate to a boolean value. |
+
+1. Can use negative numbers for both array index or array slice. It indicates the evaluator to access an item from the end of the array.
+2. Array slice can support notions like:
+   - `[1:]` slice from index 1 (inclusive) to the end
+   - `[:-1]` slice from begining to the last item (exclusive)
+   - `[1:10]` slice from 1 (inclusive) to 10 (exclusive)
 
 ## Similar Projects
 
