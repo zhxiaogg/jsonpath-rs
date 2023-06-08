@@ -259,10 +259,23 @@ impl Tokenizer {
 
     fn read_wildcard_token(
         &self,
-        _stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
-        _tokens: &mut Vec<Token>,
+        stream: &mut Peekable<impl Iterator<Item = char> + Clone>,
+        tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        todo!("implement this")
+        let mut working_stream = clone_for_look_ahead(stream);
+        working_stream.next();
+        working_stream.drop_while(|c| c.is_whitespace());
+        if let Some(WILDCARD) = working_stream.next() {
+            working_stream.drop_while(|c| c.is_whitespace());
+            if let Some(CLOSE_SQUARE_BRACKET) = working_stream.next() {
+                tokens.push(Token::Wildcard);
+                match working_stream.peek() {
+                    None => return Ok(true),
+                    Some(_) => return self.read_next_token(&mut working_stream, tokens),
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn read_dot_token(

@@ -59,7 +59,7 @@ impl Eval {
             Some(Token::Predicate(_)) => todo!(),
             Some(Token::Function(_)) => todo!(),
             Some(Token::Scan(scan)) => self.visit_scan(scan, json, tokens),
-            Some(Token::Wildcard(_)) => todo!(),
+            Some(Token::Wildcard) => self.visit_wildchard(json, tokens),
             None => todo!(),
         }
     }
@@ -108,13 +108,7 @@ impl Eval {
                     self.use_array_result_register();
 
                     for prop in token.properties.iter() {
-                        match object.get(prop) {
-                            Some(v) => {
-                                self.visit_next_token(v, &mut tokens.clone())?;
-                            }
-                            // TODO: differentiate undefined and null with options
-                            None => self.push_result(None)?,
-                        };
+                        self.handle_object_property(prop, object, &mut tokens.clone())?;
                     }
                     Ok(())
                 }
@@ -122,13 +116,22 @@ impl Eval {
         } else {
             // single property query
             let prop = token.properties.first().unwrap();
-            match object.get(prop) {
-                Some(v) => match tokens.peek() {
-                    None => self.push_result(Some(v.clone())),
-                    Some(_t) => self.visit_next_token(v, tokens),
-                },
-                None => self.push_result(None),
-            }
+            self.handle_object_property(prop, object, tokens)
+        }
+    }
+
+    fn handle_object_property<'a>(
+        &mut self,
+        prop: &String,
+        object: &Map<String, Value>,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        match object.get(prop) {
+            Some(v) => match tokens.peek() {
+                None => self.push_result(Some(v.clone())),
+                Some(_) => self.visit_next_token(v, tokens),
+            },
+            None => self.push_result(None),
         }
     }
 }
@@ -296,6 +299,34 @@ impl Eval {
         }
     }
 }
+
+impl Eval {
+    fn visit_wildchard<'a>(
+        &mut self,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        self.use_array_result_register();
+        match json {
+            Value::Array(array) => {
+                for index in 0..array.len() {
+                    self.handle_array_index(array, index as i32, &mut tokens.clone())?;
+                }
+            }
+            Value::Object(object) => {
+                for prop in object.keys() {
+                    self.handle_object_property(prop, object, &mut tokens.clone());
+                }
+            }
+            _ => {
+                return Err(JsonPathError::EvaluationError(
+                    "Expect array or object for wildcard query.".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
 #[cfg(test)]
 mod test {
     use serde_json::{json, Value};
@@ -417,6 +448,29 @@ mod test {
         assert_eq!(
             Ok(json!(["item 0", "item 1", "item 2"])),
             json.query("$.data[-5:]")
+        );
+    }
+
+    #[test]
+    fn support_wildcard_query_on_objects() {
+        let json = json!({"data": {"0": {"msg": "item 0"}, "1": {"msg": "item 1"}}});
+        assert_eq!(Ok(json!(["item 0", "item 1"])), json.query("$.data[*].msg"));
+        let json =
+            json!({"data": {"0": {"msg": {"msg": "item 0"}}, "1": {"msg": {"msg": "item 1"}}}});
+        assert_eq!(
+            Ok(json!(["item 0", "item 1"])),
+            json.query("$.data[*].msg.msg")
+        );
+    }
+
+    #[test]
+    fn support_wildcard_query_on_arrays() {
+        let json = json!({"data": [{"msg": "item 0"}, {"msg": "item 1"}]});
+        assert_eq!(Ok(json!(["item 0", "item 1"])), json.query("$.data[*].msg"));
+        let json = json!({"data": [ {"msg": {"msg": "item 0"}}, {"msg": {"msg": "item 1"}}]});
+        assert_eq!(
+            Ok(json!(["item 0", "item 1"])),
+            json.query("$.data[*].msg.msg")
         );
     }
 }

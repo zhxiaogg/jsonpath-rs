@@ -11,7 +11,7 @@ pub enum Token {
     Predicate(PredicatePathToken),
     Function(FunctionPathToken),
     Scan(ScanPathToken),
-    Wildcard(WildcardPathToken),
+    Wildcard,
 }
 
 #[derive(Debug, PartialEq)]
@@ -93,8 +93,6 @@ pub struct PredicatePathToken {}
 pub struct FunctionPathToken {}
 #[derive(Debug, PartialEq)]
 pub struct ScanPathToken {}
-#[derive(Debug, PartialEq)]
-pub struct WildcardPathToken {}
 
 #[cfg(test)]
 mod test {

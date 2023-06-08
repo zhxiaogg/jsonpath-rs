@@ -25,7 +25,7 @@ assert_eq!(Ok(json!("hello, json_path")), result);
 | :------------------------ | :------------------------------------------------------------------- |
 | `$`                       | The root element to query. This starts all path expressions.         |
 | `@`                       | WIP, The current node being processed by a filter predicate.         |
-| `*`                       | WIP, Wildcard. Available anywhere a name or numeric are required.    |
+| `*`                       | Wildcard. Available anywhere a name or numeric are required.         |
 | `..`                      | Deep scan. Available anywhere a name is required.                    |
 | `.<name>`                 | Dot-notated child                                                    |
 | `['<name>' (, '<name>')]` | Bracket-notated child or children                                    |
