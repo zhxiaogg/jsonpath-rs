@@ -13,7 +13,7 @@ use json_path::JsonPathQuery;
 use serde_json::json;
 
 let object = json!({"greetings": "hello, json_path"});
-let result = object.query("$.['greetings']");
+let result = object.query("$['greetings']");
 assert_eq!(Ok(json!("hello, json_path")), result);
 ```
 
