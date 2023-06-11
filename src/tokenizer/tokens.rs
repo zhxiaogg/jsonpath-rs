@@ -123,8 +123,6 @@ pub enum Expression {
     Literal(Value),
     Not(Box<Expression>),
     Array(Vec<Expression>),
-    NegativeExpr(Box<Expression>),
-    MinusExpr(Box<Expression>),
     CompareExpr {
         op: Comparator,
         left: Box<Expression>,

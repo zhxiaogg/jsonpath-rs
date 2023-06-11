@@ -6,7 +6,9 @@ use std::iter::Peekable;
 use serde_json::{Map, Value};
 
 use crate::{
-    tokenizer::{ArraySlice, PropertyPathToken, RootPathToken, ScanPathToken, Token},
+    tokenizer::{
+        ArraySlice, Comparator, Expression, PropertyPathToken, RootPathToken, ScanPathToken, Token,
+    },
     JsonPathError, JsonPathResult,
 };
 
@@ -20,8 +22,8 @@ impl Eval {
             result_acceptor: Box::new(ScalarResultAcceptor::new()),
         }
     }
-    pub fn eval(&mut self, json: &Value, tokens: Vec<Token>) -> JsonPathResult<Value> {
-        let mut tokens = tokens.iter().peekable();
+    pub fn eval(&mut self, json: &Value, tokens: impl AsRef<Vec<Token>>) -> JsonPathResult<Value> {
+        let mut tokens = tokens.as_ref().iter().peekable();
 
         match tokens.next() {
             Some(Token::Root(root)) => self.visit_root(root, json, &mut tokens)?,
@@ -56,7 +58,7 @@ impl Eval {
             Some(Token::ArraySlice(array_slice)) => {
                 self.visit_array_slice(array_slice, json, tokens)
             }
-            Some(Token::Predicate(_)) => todo!(),
+            Some(Token::Predicate(expression)) => self.visit_predicate(expression, json, tokens),
             Some(Token::Function(_)) => todo!(),
             Some(Token::Scan(scan)) => self.visit_scan(scan, json, tokens),
             Some(Token::Wildcard) => self.visit_wildchard(json, tokens),
@@ -327,6 +329,127 @@ impl Eval {
         Ok(())
     }
 }
+
+impl Eval {
+    fn visit_predicate<'a>(
+        &mut self,
+        expression: &Expression,
+        json: &Value,
+        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
+    ) -> JsonPathResult<()> {
+        let result = self.eval_expr(expression, json)?;
+        let bool = Self::get_bool(result);
+        match (bool, tokens.peek()) {
+            (true, None) => self.push_result(Some(json.clone())),
+            (true, Some(_)) => self.visit_next_token(json, tokens),
+            _ => Ok(()),
+        }
+    }
+
+    fn get_bool(value: Value) -> bool {
+        match value {
+            Value::Bool(b) => b,
+            Value::Null => false,
+            _ => true,
+        }
+    }
+
+    fn eval_expr(&self, expression: &Expression, json: &Value) -> JsonPathResult<Value> {
+        let result = match expression {
+            Expression::JsonQuery(tokens) => {
+                let mut eval = Eval::new();
+                // TODO: support jsonpath query on the root object (using $)
+                eval.eval(json, tokens)?
+            }
+            Expression::Literal(v) => v.clone(),
+            Expression::Not(inner) => {
+                let r = self.eval_expr(inner, json)?;
+                match r {
+                    Value::Bool(b) => Value::Bool(!b),
+                    Value::Null => Value::Bool(true),
+                    _ => Value::Bool(false),
+                }
+            }
+            Expression::Array(v) => {
+                let values = v
+                    .iter()
+                    .map(|e| self.eval_expr(e, json))
+                    .collect::<JsonPathResult<Vec<Value>>>()?;
+                Value::Array(values)
+            }
+            Expression::CompareExpr { op, left, right } => {
+                let left = self.eval_expr(left, json)?;
+                let right = self.eval_expr(right, json)?;
+                let result = match op {
+                    Comparator::Eq => left.eq(&right),
+                    Comparator::Neq => !left.eq(&right),
+                    Comparator::Gt => match (left, right) {
+                        (Value::Number(l), Value::Number(r)) => l.as_f64() > r.as_f64(),
+                        _ => false,
+                    },
+                    Comparator::GtEq => match (left, right) {
+                        (Value::Number(l), Value::Number(r)) => l.as_f64() >= r.as_f64(),
+                        _ => false,
+                    },
+                    Comparator::Lt => match (left, right) {
+                        (Value::Number(l), Value::Number(r)) => l.as_f64() < r.as_f64(),
+                        _ => false,
+                    },
+                    Comparator::LtEq => match (left, right) {
+                        (Value::Number(l), Value::Number(r)) => l.as_f64() <= r.as_f64(),
+                        _ => false,
+                    },
+                    Comparator::RegExpMatch => todo!(), // TODO: implement this
+                    Comparator::AND => Self::get_bool(left) && Self::get_bool(right),
+                    Comparator::OR => Self::get_bool(left) || Self::get_bool(right),
+                    Comparator::IN => match right {
+                        Value::Array(values) => values.contains(&left),
+                        _ => false,
+                    },
+                    Comparator::NIN => match right {
+                        Value::Array(values) => !values.contains(&left),
+                        _ => false,
+                    },
+                    Comparator::SubsetOf => match (left, right) {
+                        (Value::Array(l), Value::Array(r)) => l.iter().all(|c| r.contains(c)),
+                        _ => false,
+                    },
+                    Comparator::AnyOf => match (left, right) {
+                        (Value::Array(l), Value::Array(r)) => l.iter().any(|c| r.contains(c)),
+                        _ => false,
+                    },
+                    Comparator::NoneOf => match (left, right) {
+                        (Value::Array(l), Value::Array(r)) => !l.iter().any(|c| r.contains(c)),
+                        _ => false,
+                    },
+                    Comparator::Contains => match (left, right) {
+                        (Value::Array(values), r) => values.contains(&r),
+                        (Value::String(l), Value::String(r)) => l.contains(&r),
+                        _ => false,
+                    },
+                    Comparator::SizeOf => match (left, right) {
+                        (Value::Array(values), Value::Number(n)) => {
+                            values.len() as i64 == n.as_i64().unwrap_or(-1)
+                        }
+                        (Value::String(s), Value::Number(n)) => {
+                            s.len() as i64 == n.as_i64().unwrap_or(-1)
+                        }
+                        _ => false,
+                    },
+                    Comparator::Empty => match (left, right) {
+                        (Value::Array(values), Value::Bool(b)) => values.is_empty() == b,
+                        (Value::String(s), Value::Bool(b)) => s.is_empty() == b,
+                        (Value::Null, Value::Bool(b)) => b,
+                        _ => false,
+                    },
+                };
+                Value::Bool(result)
+            }
+        };
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use serde_json::{json, Value};
@@ -472,5 +595,133 @@ mod test {
             Ok(json!(["item 0", "item 1"])),
             json.query("$.data[*].msg.msg")
         );
+    }
+
+    #[test]
+    fn support_simple_filters() {
+        let json = json!({"data": [{"msg": "item 0"}, {"msg": "item 1"}]});
+        assert_eq!(
+            Ok(json!(["item 0", "item 1"])),
+            json.query("$.data[*][?(@.msg)].msg")
+        );
+    }
+
+    #[test]
+    fn support_simple_filters_2() {
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 10}]});
+        assert_eq!(
+            Ok(json!(["item 0"])),
+            json.query("$.data[*][?(@.msg && @.id == 10)].msg")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_in() {
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 10}]});
+        assert_eq!(
+            Ok(json!(["item 0"])),
+            json.query("$.data[*][?(@.msg in ['item 0'])].msg")
+        );
+        assert_eq!(
+            Ok(json!(["item 0", "item 1", null])),
+            json.query("$.data[*][?(@.id in [10, 11])].msg")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_in2() {
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 10}]});
+        assert_eq!(
+            Ok(json!(["item 1", null])),
+            json.query("$.data[*][?(@.msg nin ['item 0'])].msg")
+        );
+        assert_eq!(
+            Ok(json!([])),
+            json.query("$.data[*][?(@.id nin [10, 11])].msg")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_subsetof() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": ["M"], "id": 12}]});
+        assert_eq!(
+            Ok(json!([10, 12])),
+            json.query("$.data[*][?(@.sizes subsetof ['M', \"L\"])].id")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_anyof() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": ["XXL"], "id": 12}]});
+        assert_eq!(
+            Ok(json!([10, 11])),
+            json.query("$.data[*][?(@.sizes anyof ['M', \"L\"])].id")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_noneof() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": ["XXL"], "id": 12}]});
+        assert_eq!(
+            Ok(json!([12])),
+            json.query("$.data[*][?(@.sizes noneof ['M', \"L\"])].id")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_contains() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": ["XXL"], "id": 12}]});
+        assert_eq!(
+            Ok(json!([10, 11])),
+            json.query("$.data[*][?(@.sizes contains 'M')].id")
+        );
+
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 10}]});
+        assert_eq!(
+            Ok(json!(["item 0"])),
+            json.query("$.data[*][?(@.msg contains '0')].msg")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_sizeof() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": ["XXL"], "id": 12}]});
+        assert_eq!(
+            Ok(json!([10, 11])),
+            json.query("$.data[*][?(@.sizes size 2)].id")
+        );
+
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 10}]});
+        assert_eq!(
+            Ok(json!(["item 0", "item 1"])),
+            json.query("$.data[*][?(@.msg size 6)].msg")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_empty_op() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": [], "id": 12}]});
+        assert_eq!(
+            Ok(json!([10, 11])),
+            json.query("$.data[*][?(@.sizes empty false)].id")
+        );
+
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 12}]});
+        assert_eq!(
+            Ok(json!([12])),
+            json.query("$.data[*][?(@.msg empty true)].id")
+        );
+    }
+
+    #[test]
+    fn support_filters_with_not_op() {
+        let json = json!({"data": [{"sizes": ["M", "L"], "id": 10}, {"sizes": ["M",  "XXL"], "id": 11}, {"sizes": [], "id": 12}]});
+        assert_eq!(
+            Ok(json!([12])),
+            json.query("$.data[*][?(!(@.sizes empty false))].id")
+        );
+
+        let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 12}]});
+        assert_eq!(Ok(json!([12])), json.query("$.data[*][?(!@.msg)].id"));
     }
 }
