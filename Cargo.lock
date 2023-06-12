@@ -175,7 +175,7 @@ checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 
 [[package]]
 name = "json_path"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "peekmore",
  "serde_json",
@@ -183,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "json_path_bin"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "json_path",
