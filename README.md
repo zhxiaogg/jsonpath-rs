@@ -4,9 +4,14 @@
 [![docs.rs](https://img.shields.io/docsrs/json_path)](https://docs.rs/json_path/latest)
 [![Rust CI](https://github.com/zhxiaogg/jsonpath-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/zhxiaogg/jsonpath-rs/actions/workflows/rust.yml)
 
-A Rust [JsonPath](https://goessner.net/articles/JsonPath/) implementation based on the Java [json-path/JsonPath](https://github.com/json-path/JsonPath) project.
+A Rust implementation of [JsonPath](https://goessner.net/articles/JsonPath/).
 
-## Usage
+## Why
+
+1. Return correct result types (scalar vs. array) based on user queries
+2. Support a rich set of filters and functions (WIP), e.g. `[?((@.id > 10 || @.id < -1) && @.msg contains 'jsonpath')]`
+
+## To Use the Library
 
 ```rust
 use json_path::JsonPathQuery;
@@ -15,6 +20,15 @@ use serde_json::json;
 let object = json!({"greetings": "hello, json_path"});
 let result = object.query("$['greetings']");
 assert_eq!(Ok(json!("hello, json_path")), result);
+```
+
+## To Use the Binary
+
+```shell
+$ cargo install json_path_bin
+$ echo '{"msg": "hello!"}' | json_path_bin -j '$.msg'
+"hello!"
+$
 ```
 
 ## Features

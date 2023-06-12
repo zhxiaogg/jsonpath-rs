@@ -300,7 +300,7 @@ impl Eval {
             }
             Value::Object(object) => {
                 for prop in object.keys() {
-                    self.handle_object_property(prop, object, &mut tokens.clone());
+                    self.handle_object_property(prop, object, &mut tokens.clone())?;
                 }
             }
             _ => {

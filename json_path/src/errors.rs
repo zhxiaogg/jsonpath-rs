@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 use peekmore::PeekMoreError;
 
@@ -9,6 +9,8 @@ pub enum JsonPathError {
     InvalidJsonPath(String, usize),
     EvaluationError(String),
 }
+
+impl Error for JsonPathError {}
 
 impl Display for JsonPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
