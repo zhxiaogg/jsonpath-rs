@@ -87,8 +87,40 @@ impl Tokenizer {
         stream: &mut TokenStream<'_>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        stream.next();
+        match stream.peek_significant_and_move_on() {
+            Some(PERIOD) => {
+                stream.truncate_iterator_to_cursor();
+            }
+            _ => {
+                stream.reset_cursor();
+                return Ok(false);
+            }
+        }
 
+        let prop_or_function = self.read_property_or_function_name(stream)?;
+        match prop_or_function {
+            Some(token) => tokens.push(token),
+            None => {
+                return Err(JsonPathError::InvalidJsonPath(
+                    format!(
+                        "Expect property or function name, find: {:?}",
+                        stream.peek()
+                    ),
+                    0,
+                ));
+            }
+        }
+
+        match stream.peek().is_some() {
+            true => self.read_next_token(stream, tokens),
+            false => Ok(true),
+        }
+    }
+
+    fn read_property_or_function_name(
+        &self,
+        stream: &mut TokenStream<'_>,
+    ) -> JsonPathResult<Option<Token>> {
         let mut is_function = false;
         let mut s: String = String::new();
         while let Some(c) = stream.peek() {
@@ -107,13 +139,10 @@ impl Tokenizer {
         }
         if is_function {
             unimplemented!("function is not supported")
+        } else if !s.is_empty() {
+            Ok(Some(Token::property(s)))
         } else {
-            tokens.push(Token::property(s))
-        }
-
-        match stream.peek().is_some() {
-            true => self.read_next_token(stream, tokens),
-            false => Ok(true),
+            Ok(None)
         }
     }
 
@@ -207,13 +236,15 @@ impl Tokenizer {
             stream.peek_significant().copied(),
         ) {
             (Some(OPEN_SQUARE_BRACKET), Some(c))
-                if c.is_ascii_digit() || c == MINUS || c == SPLIT => {}
+                if c.is_ascii_digit() || c == MINUS || c == SPLIT =>
+            {
+                stream.truncate_iterator_to_cursor();
+            }
             _ => {
                 stream.reset_cursor();
                 return Ok(false);
             }
         }
-        stream.truncate_iterator_to_cursor();
 
         // try get array index, after the loop, next token should be ]
         let mut expr = String::new();
@@ -291,19 +322,30 @@ impl Tokenizer {
         stream: &mut TokenStream<'_>,
         tokens: &mut Vec<Token>,
     ) -> JsonPathResult<bool> {
-        match stream.peek_next() {
-            Some(c) if *c == PERIOD => {
-                stream.next();
+        match (
+            stream.peek_significant_and_move_on(),
+            stream.peek_significant_and_move_on(),
+        ) {
+            (Some(PERIOD), Some(PERIOD)) => {
+                stream.truncate_iterator_to_cursor();
                 // create scan token
                 tokens.push(Token::scan());
-                if let Some(PERIOD) = stream.peek_next().copied() {
+                if let Some(PERIOD) = stream.peek().copied() {
                     // TODO: add position info
                     return Err(JsonPathError::InvalidJsonPath(
                         "Unexpected '.' in the jsonpath.".to_string(),
                         stream.cursor(),
                     ));
                 }
-                self.read_property_or_function_token(stream, tokens)
+                let opt_token = self.read_property_or_function_name(stream)?;
+                match opt_token {
+                    Some(token) => tokens.push(token),
+                    None => {}
+                };
+                match stream.peek() {
+                    Some(_) => self.read_next_token(stream, tokens),
+                    None => Ok(true),
+                }
             }
             _ => {
                 stream.reset_cursor();

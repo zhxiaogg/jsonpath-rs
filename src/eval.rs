@@ -62,7 +62,7 @@ impl Eval {
             Some(Token::Function(_)) => todo!(),
             Some(Token::Scan(scan)) => self.visit_scan(scan, json, tokens),
             Some(Token::Wildcard) => self.visit_wildchard(json, tokens),
-            None => todo!(),
+            None => Ok(()),
         }
     }
 
@@ -84,12 +84,10 @@ impl Eval {
         object: &Value,
         tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
     ) -> JsonPathResult<()> {
-        let object = object
-            .as_object()
-            .ok_or(JsonPathError::EvaluationError(format!(
-                "Expected to find an object with property {:?}",
-                token
-            )))?;
+        let object = match object {
+            Value::Object(object) => object,
+            _ => return Ok(()),
+        };
 
         if token.properties.len() > 1 {
             match tokens.peek() {
@@ -167,34 +165,19 @@ impl Eval {
         json: &Value,
         tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
     ) -> JsonPathResult<()> {
-        match json {
-            Value::Object(_object) => self.walk_object(json, tokens),
-            Value::Array(_array) => self.walk_array(json, tokens),
-            _ => Ok(()),
-        }
-    }
-
-    fn walk_object<'a>(
-        &mut self,
-        json: &Value,
-        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
-    ) -> JsonPathResult<()> {
         self.visit_next_token(json, &mut tokens.clone())?;
-        let object = json.as_object().unwrap();
-        for (_k, v) in object {
-            self.walk(v, &mut tokens.clone())?;
-        }
-        Ok(())
-    }
-
-    fn walk_array<'a>(
-        &mut self,
-        json: &Value,
-        tokens: &mut Peekable<impl Iterator<Item = &'a Token> + Clone>,
-    ) -> JsonPathResult<()> {
-        let array = json.as_array().unwrap();
-        for v in array {
-            self.walk(v, &mut tokens.clone())?;
+        match json {
+            Value::Object(object) => {
+                for (_k, v) in object {
+                    self.walk(v, &mut tokens.clone())?;
+                }
+            }
+            Value::Array(array) => {
+                for v in array {
+                    self.walk(v, &mut tokens.clone())?;
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -723,5 +706,11 @@ mod test {
 
         let json = json!({"data": [{"msg": "item 0", "id": 10}, {"msg": "item 1", "id": 11}, {"msg": null, "id": 12}]});
         assert_eq!(Ok(json!([12])), json.query("$.data[*][?(!@.msg)].id"));
+    }
+
+    #[test]
+    fn support_scan_and_filter() {
+        let json = json!([1, 2, 3]);
+        assert_eq!(Ok(json!([1, 2, 3])), json.query("$..[?(@>=1)]"));
     }
 }
