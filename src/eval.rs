@@ -567,6 +567,10 @@ mod test {
             Ok(json!(["item 0", "item 1"])),
             json.query("$.data[*].msg.msg")
         );
+        assert_eq!(
+            Ok(json!(["item 0", "item 1"])),
+            json.query("$.data.*.msg.msg")
+        );
     }
 
     #[test]

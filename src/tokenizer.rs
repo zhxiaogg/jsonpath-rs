@@ -73,11 +73,10 @@ impl Tokenizer {
             }
             PERIOD => {
                 let r = self.read_dot_token(stream, tokens)?
+                    || self.read_wildcard_token(stream, tokens)?
                     || self.read_property_or_function_token(stream, tokens)?;
                 Ok(r)
             }
-            // TODO: support this scenario
-            WILDCARD => self.read_wildcard_token(stream, tokens),
             _ => Ok(false),
         }
     }
@@ -308,6 +307,14 @@ impl Tokenizer {
                         "Expect ] to close wildcard query.".to_string(),
                         0,
                     ))
+                }
+            }
+            (Some(PERIOD), Some(WILDCARD)) => {
+                stream.truncate_iterator_to_cursor();
+                tokens.push(Token::Wildcard);
+                match stream.peek() {
+                    None => Ok(true),
+                    Some(_) => self.read_next_token(stream, tokens),
                 }
             }
             _ => {
