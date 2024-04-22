@@ -14,4 +14,4 @@ exclude.workspace = true
 [dependencies]
 serde_json = "1.0"
 json_path = { path = "../json_path", version = "0.1" }
-clap = { version = "4.5.3", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive"] }
